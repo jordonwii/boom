@@ -17,6 +17,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	gourl "net/url"
 	"os"
@@ -24,7 +25,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/rakyll/boom/boomer"
+	"github.com/flx42/boom/boomer"
 )
 
 const (
@@ -68,7 +69,7 @@ Options:
   -h  Custom HTTP headers, name1:value1;name2:value2.
   -t  Timeout in ms.
   -A  HTTP Accept header.
-  -d  HTTP request body.
+  -d  HTTP request body. If you start the data with the letter @, the rest should be a file name to read the data from.
   -T  Content-type, defaults to "text/html".
   -a  Basic authentication, username:password.
   -x  HTTP Proxy address as host:port.
@@ -152,10 +153,14 @@ func main() {
 	if username != "" || password != "" {
 		req.SetBasicAuth(username, password)
 	}
+	reqBody, err := parseRequestBody(*body)
+	if err != nil {
+		usageAndExit(err.Error())
+	}
 
 	(&boomer.Boomer{
 		Request:            req,
-		RequestBody:        *body,
+		RequestBody:        reqBody,
 		N:                  num,
 		C:                  conc,
 		Qps:                q,
@@ -184,4 +189,16 @@ func parseInputWithRegexp(input, regx string) ([]string, error) {
 		return nil, fmt.Errorf("could not parse the provided input; input = %v", input)
 	}
 	return matches, nil
+}
+
+func parseRequestBody(arg string) (string, error) {
+	if arg == "" || arg[0] != '@' {
+		return arg, nil
+	}
+
+	contents, err := ioutil.ReadFile(arg[1:])
+	if err != nil {
+		return "", err
+	}
+	return string(contents), nil
 }
