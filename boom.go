@@ -25,7 +25,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/flx42/boom/boomer"
+	"github.com/jordonwii/boom/boomer"
 )
 
 const (
@@ -48,6 +48,8 @@ var (
 	q    = flag.Int("q", 0, "")
 	t    = flag.Int("t", 0, "")
 	cpus = flag.Int("cpus", runtime.GOMAXPROCS(-1), "")
+
+	pathListFile = flag.String("paths", "", "")
 
 	disableCompression = flag.Bool("disable-compression", false, "")
 	disableKeepAlives  = flag.Bool("disable-keepalive", false, "")
@@ -74,6 +76,8 @@ Options:
   -a  Basic authentication, username:password.
   -x  HTTP Proxy address as host:port.
 
+  -paths <file> Path to a text file containing new-line delimited urls to hit.
+
   -disable-compression  Disable compression.
   -disable-keepalive    Disable keep-alive, prevents re-use of TCP
                         connections between different HTTP requests.
@@ -81,14 +85,28 @@ Options:
                         (default for current machine is %d cores)
 `
 
+func parsePathsFile() []string {
+	file, err := ioutil.ReadFile(*pathListFile)
+	if err != nil {
+		usageAndExit("Error opening path list file" + *pathListFile + ": " + err.Error())
+	}
+
+	urls := strings.Split(strings.Trim(string(file), "\n"), "\n")
+	if len(urls) == 0 {
+		usageAndExit("Paths file is empty.")
+	}
+	return urls
+}
+
 func main() {
 	flag.Usage = func() {
 		fmt.Fprint(os.Stderr, fmt.Sprintf(usage, runtime.NumCPU()))
 	}
 
 	flag.Parse()
-	if flag.NArg() < 1 {
-		usageAndExit("")
+
+	if *pathListFile == "" && flag.NArg() < 1 {
+		usageAndExit("Either a URL or -paths must be provided.")
 	}
 
 	runtime.GOMAXPROCS(*cpus)
@@ -100,7 +118,6 @@ func main() {
 		usageAndExit("n and c cannot be smaller than 1.")
 	}
 
-	url := flag.Args()[0]
 	method := strings.ToUpper(*m)
 
 	// set content-type
@@ -145,21 +162,35 @@ func main() {
 		}
 	}
 
-	req, err := http.NewRequest(method, url, nil)
-	if err != nil {
-		usageAndExit(err.Error())
-	}
-	req.Header = header
-	if username != "" || password != "" {
-		req.SetBasicAuth(username, password)
-	}
 	reqBody, err := parseRequestBody(*body)
 	if err != nil {
 		usageAndExit(err.Error())
 	}
 
+	var urls []string
+	if *pathListFile == "" {
+		urls = make([]string, 1)
+		urls[0] = flag.Args()[0]
+	} else {
+		urls = parsePathsFile()
+	}
+
+	requests := make([]*http.Request, len(urls))
+	for i, url := range urls {
+		fmt.Println("Adding url", url)
+		req, err := http.NewRequest(method, url, nil)
+		if err != nil {
+			usageAndExit(err.Error())
+		}
+		req.Header = header
+		if username != "" || password != "" {
+			req.SetBasicAuth(username, password)
+		}
+		requests[i] = req
+	}
+
 	(&boomer.Boomer{
-		Request:            req,
+		Requests:           requests,
 		RequestBody:        reqBody,
 		N:                  num,
 		C:                  conc,

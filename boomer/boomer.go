@@ -17,6 +17,7 @@ package boomer
 
 import (
 	"crypto/tls"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -37,7 +38,7 @@ type result struct {
 
 type Boomer struct {
 	// Request is the request to be made.
-	Request *http.Request
+	Requests []*http.Request
 
 	RequestBody string
 
@@ -73,30 +74,40 @@ type Boomer struct {
 // Run makes all the requests, prints the summary. It blocks until
 // all work is done.
 func (b *Boomer) Run() {
-	b.results = make(chan *result, b.N)
+	b.results = make(chan *result, b.N*len(b.Requests))
 
-	start := time.Now()
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
+	start := time.Now()
 
 	go func() {
 		<-c
 		// TODO(jbd): Progress bar should not be finalized.
-		newReport(b.N, b.results, b.Output, time.Now().Sub(start)).finalize()
+		newReport(b.N*len(b.Requests), b.results, b.Output, time.Now().Sub(start)).finalize()
 		os.Exit(1)
 	}()
 
-	b.runWorkers()
-	newReport(b.N, b.results, b.Output, time.Now().Sub(start)).finalize()
+	var totalTime time.Duration
+	totalTime = 0
+	for reqNum, _ := range b.Requests {
+		fmt.Println("Hitting ", b.Requests[reqNum].URL.Path)
+
+		start = time.Now()
+		b.runWorkers(reqNum)
+		fmt.Println("after unr woko")
+		runTime := time.Now().Sub(start)
+		totalTime += runTime
+	}
+	newReport(b.N*len(b.Requests), b.results, b.Output, totalTime).finalize()
 	close(b.results)
 }
 
-func (b *Boomer) makeRequest(c *http.Client) {
+func (b *Boomer) makeRequest(c *http.Client, reqNum int) {
 	s := time.Now()
 	var size int64
 	var code int
 
-	resp, err := c.Do(cloneRequest(b.Request, b.RequestBody))
+	resp, err := c.Do(cloneRequest(b.Requests[reqNum], b.RequestBody))
 	if err == nil {
 		size = resp.ContentLength
 		code = resp.StatusCode
@@ -111,10 +122,12 @@ func (b *Boomer) makeRequest(c *http.Client) {
 	}
 }
 
-func (b *Boomer) runWorker(n int) {
+func (b *Boomer) runWorker(n int, reqNum int) {
 	var throttle <-chan time.Time
 	if b.Qps > 0 {
+		fmt.Println("About to throttle")
 		throttle = time.Tick(time.Duration(1e6/(b.Qps)) * time.Microsecond)
+		fmt.Println("throttle end")
 	}
 
 	tr := &http.Transport{
@@ -132,22 +145,24 @@ func (b *Boomer) runWorker(n int) {
 		if b.Qps > 0 {
 			<-throttle
 		}
-		b.makeRequest(client)
+		b.makeRequest(client, reqNum)
 	}
 }
 
-func (b *Boomer) runWorkers() {
+func (b *Boomer) runWorkers(reqNum int) {
+
 	var wg sync.WaitGroup
 	wg.Add(b.C)
-
 	// Ignore the case where b.N % b.C != 0.
 	for i := 0; i < b.C; i++ {
 		go func() {
-			b.runWorker(b.N / b.C)
+			b.runWorker(b.N/b.C, reqNum)
 			wg.Done()
 		}()
 	}
+	fmt.Println("about tow ait")
 	wg.Wait()
+	fmt.Println("after wait")
 }
 
 // cloneRequest returns a clone of the provided *http.Request.
