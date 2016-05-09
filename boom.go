@@ -177,7 +177,6 @@ func main() {
 
 	requests := make([]*http.Request, len(urls))
 	for i, url := range urls {
-		fmt.Println("Adding url", url)
 		req, err := http.NewRequest(method, url, nil)
 		if err != nil {
 			usageAndExit(err.Error())
