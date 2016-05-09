@@ -90,11 +90,8 @@ func (b *Boomer) Run() {
 	var totalTime time.Duration
 	totalTime = 0
 	for reqNum, _ := range b.Requests {
-		fmt.Println("Hitting ", b.Requests[reqNum].URL.Path)
-
 		start = time.Now()
 		b.runWorkers(reqNum)
-		fmt.Println("after unr woko")
 		runTime := time.Now().Sub(start)
 		totalTime += runTime
 	}
@@ -125,9 +122,7 @@ func (b *Boomer) makeRequest(c *http.Client, reqNum int) {
 func (b *Boomer) runWorker(n int, reqNum int) {
 	var throttle <-chan time.Time
 	if b.Qps > 0 {
-		fmt.Println("About to throttle")
 		throttle = time.Tick(time.Duration(1e6/(b.Qps)) * time.Microsecond)
-		fmt.Println("throttle end")
 	}
 
 	tr := &http.Transport{
@@ -160,9 +155,7 @@ func (b *Boomer) runWorkers(reqNum int) {
 			wg.Done()
 		}()
 	}
-	fmt.Println("about tow ait")
 	wg.Wait()
-	fmt.Println("after wait")
 }
 
 // cloneRequest returns a clone of the provided *http.Request.
