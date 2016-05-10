@@ -73,7 +73,7 @@ type Boomer struct {
 // Run makes all the requests, prints the summary. It blocks until
 // all work is done.
 func (b *Boomer) Run() {
-	b.results = make(chan *result, b.N*len(b.Requests))
+	b.results = make(chan *result, b.N)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -88,12 +88,10 @@ func (b *Boomer) Run() {
 
 	var totalTime time.Duration
 	totalTime = 0
-	for reqNum, _ := range b.Requests {
-		start = time.Now()
-		b.runWorkers(reqNum)
-		runTime := time.Now().Sub(start)
-		totalTime += runTime
-	}
+	start = time.Now()
+	b.runWorkers()
+	runTime := time.Now().Sub(start)
+	totalTime += runTime
 	newReport(b.N*len(b.Requests), b.results, b.Output, totalTime).finalize()
 	close(b.results)
 }
@@ -118,7 +116,7 @@ func (b *Boomer) makeRequest(c *http.Client, reqNum int) {
 	}
 }
 
-func (b *Boomer) runWorker(n int, reqNum int) {
+func (b *Boomer) runWorker(n int, workerID int) {
 	var throttle <-chan time.Time
 	if b.Qps > 0 {
 		throttle = time.Tick(time.Duration(1e6/(b.Qps)) * time.Microsecond)
@@ -135,24 +133,24 @@ func (b *Boomer) runWorker(n int, reqNum int) {
 		Proxy:               http.ProxyURL(b.ProxyAddr),
 	}
 	client := &http.Client{Transport: tr}
-	for i := 0; i < n; i++ {
+	for i := workerID; i < n*b.C; i += b.C {
 		if b.Qps > 0 {
 			<-throttle
 		}
-		b.makeRequest(client, reqNum)
+		b.makeRequest(client, i)
 	}
 }
 
-func (b *Boomer) runWorkers(reqNum int) {
+func (b *Boomer) runWorkers() {
 
 	var wg sync.WaitGroup
 	wg.Add(b.C)
 	// Ignore the case where b.N % b.C != 0.
 	for i := 0; i < b.C; i++ {
-		go func() {
-			b.runWorker(b.N/b.C, reqNum)
+		go func(i int) {
+			b.runWorker(b.N/b.C, i)
 			wg.Done()
-		}()
+		}(i)
 	}
 	wg.Wait()
 }
