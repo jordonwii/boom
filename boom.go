@@ -25,7 +25,7 @@ import (
 	"runtime"
 	"strings"
 
-	"boom_sweep/boomer"
+	"boom/boomer"
 )
 
 const (
