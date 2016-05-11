@@ -25,7 +25,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/jordonwii/boom/boomer"
+	"boom_sweep/boomer"
 )
 
 const (
